@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="github" fetch="https://github.com/" />
+  <remote name="gitlab" fetch="https://gitlab.com/" />
+  <default remote="github" revision="main" />
+
+  <project name="org/core" path="components/core" revision="v2.0.0" />
+  <project name="org/utils" path="components/utils" />
+  <project name="org/cli" path="tools/cli" remote="gitlab" revision="develop" />
+  <project name="org/docs" path="docs" revision="stable" />
+</manifest>

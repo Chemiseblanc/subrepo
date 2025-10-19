@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="github" fetch="https://github.com/" />
+  <default remote="github" revision="main" />
+
+  <project name="testorg/lib1" path="lib/lib1" />
+  <project name="testorg/lib2" path="lib/lib2" />
+</manifest>
