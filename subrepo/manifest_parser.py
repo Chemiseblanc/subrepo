@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .exceptions import ManifestError, ManifestValidationError
-from .models import Manifest, Project, Remote
+from .models import Copyfile, Linkfile, Manifest, Project, Remote
 
 # Regular expression pattern for full git commit SHA (40 hexadecimal characters)
 SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -124,6 +124,42 @@ def parse_manifest(manifest_path: Path) -> Manifest:
         clone_depth_str = project_elem.get("clone-depth")
         clone_depth = int(clone_depth_str) if clone_depth_str else None
 
+        # Parse copyfile elements
+        copyfiles: list[Copyfile] = []
+        for copyfile_elem in project_elem.findall("copyfile"):
+            src = copyfile_elem.get("src")
+            dest = copyfile_elem.get("dest")
+
+            if not src:
+                raise ManifestError(f"Project '{name}' copyfile missing required 'src' attribute")
+            if not dest:
+                raise ManifestError(f"Project '{name}' copyfile missing required 'dest' attribute")
+
+            try:
+                copyfiles.append(Copyfile(src=src, dest=dest))
+            except ValueError as e:
+                raise ManifestValidationError(
+                    f"Project '{name}' copyfile validation failed: {e}"
+                ) from e
+
+        # Parse linkfile elements
+        linkfiles: list[Linkfile] = []
+        for linkfile_elem in project_elem.findall("linkfile"):
+            src = linkfile_elem.get("src")
+            dest = linkfile_elem.get("dest")
+
+            if not src:
+                raise ManifestError(f"Project '{name}' linkfile missing required 'src' attribute")
+            if not dest:
+                raise ManifestError(f"Project '{name}' linkfile missing required 'dest' attribute")
+
+            try:
+                linkfiles.append(Linkfile(src=src, dest=dest))
+            except ValueError as e:
+                raise ManifestValidationError(
+                    f"Project '{name}' linkfile validation failed: {e}"
+                ) from e
+
         try:
             project = Project(
                 name=name,
@@ -132,6 +168,8 @@ def parse_manifest(manifest_path: Path) -> Manifest:
                 revision=revision,
                 upstream=upstream,
                 clone_depth=clone_depth,
+                copyfiles=copyfiles,
+                linkfiles=linkfiles,
             )
             projects.append(project)
         except ValueError as e:
@@ -155,7 +193,7 @@ def parse_manifest(manifest_path: Path) -> Manifest:
         # Convert ValueError from Manifest.__post_init__ to ManifestValidationError
         raise ManifestValidationError(str(e)) from e
 
-    # Validate manifest
+    # Validate manifest (includes copyfile/linkfile dest uniqueness check)
     validate_manifest(manifest)
 
     return manifest
@@ -213,6 +251,10 @@ def validate_manifest(manifest: Manifest) -> None:
     # Rule: If default_remote is specified, it must exist
     if manifest.default_remote and manifest.default_remote not in manifest.remotes:
         errors.append(f"Default remote '{manifest.default_remote}' not found in defined remotes")
+
+    # Check copyfile/linkfile dest path uniqueness
+    manifest_errors = manifest.validate()
+    errors.extend(manifest_errors)
 
     # Raise if any errors found
     if errors:

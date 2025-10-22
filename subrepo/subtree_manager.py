@@ -9,6 +9,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .exceptions import GitOperationError, WorkspaceError
+from .file_operations import (
+    execute_copyfile_operations,
+    execute_linkfile_operations,
+)
 from .git_commands import (
     create_branch_info,
     determine_target_branch,
@@ -21,6 +25,7 @@ from .git_commands import (
     git_subtree_push,
 )
 from .models import (
+    FileOperationResult,
     GitOperationResult,
     Manifest,
     Project,
@@ -44,6 +49,7 @@ class SubtreeManager:
         self.manifest = manifest
         self.subtree_state_dir = workspace_path / ".subrepo" / "subtrees"
         self.subtree_state_dir.mkdir(parents=True, exist_ok=True)
+        self.file_operation_results: list[FileOperationResult] = []
 
     def sync_all_components(
         self,
@@ -148,11 +154,38 @@ class SubtreeManager:
             squash=True,
         )
 
-        # Update subtree state
+        # Update subtree state and execute file operations if successful
         if result.success:
             self._save_subtree_state(project)
 
+            # Execute copyfile operations
+            project_dir = self.workspace_path / project.path
+            if project.copyfiles:
+                copyfile_results = execute_copyfile_operations(
+                    project=project,
+                    workspace_root=self.workspace_path,
+                    project_dir=project_dir,
+                )
+                self.file_operation_results.extend(copyfile_results)
+
+            # Execute linkfile operations
+            if project.linkfiles:
+                linkfile_results = execute_linkfile_operations(
+                    project=project,
+                    workspace_root=self.workspace_path,
+                    project_dir=project_dir,
+                )
+                self.file_operation_results.extend(linkfile_results)
+
         return result
+
+    def get_file_operation_summary(self) -> list[FileOperationResult]:
+        """Get summary of all file operations executed during sync.
+
+        Returns:
+            List of FileOperationResult objects
+        """
+        return self.file_operation_results
 
     def detect_component_state(self, project: Project) -> SubtreeState:
         """Detect the current state of a component.
@@ -187,7 +220,9 @@ class SubtreeManager:
                     # Check if the file is within the component path
                     # Git may show parent directory for untracked files (e.g., "?? lib/")
                     # So we check both: file is in component OR component is in file
-                    if filename.startswith(project.path) or project.path.startswith(filename.rstrip("/")):
+                    if filename.startswith(project.path) or project.path.startswith(
+                        filename.rstrip("/")
+                    ):
                         has_changes = True
                         break
 

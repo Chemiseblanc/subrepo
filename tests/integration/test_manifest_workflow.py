@@ -194,4 +194,5 @@ class TestStatusAcrossMultipleComponentStates:
         assert len(statuses) == 1
         assert hasattr(statuses[0], "status")
         from subrepo.models import SubtreeStatus
+
         assert statuses[0].status == SubtreeStatus.UNINITIALIZED

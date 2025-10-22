@@ -23,7 +23,7 @@ from .exceptions import (
 )
 from .git_commands import create_branch_info, git_subtree_add
 from .manifest_parser import parse_manifest
-from .models import PushAction, PushStatus
+from .models import FileOperationSummary, PushAction, PushStatus
 from .subtree_manager import SubtreeManager
 from .workspace import init_workspace, load_workspace_config
 
@@ -145,8 +145,7 @@ def init_command(args: argparse.Namespace) -> int:
             existing_files = list(directory.iterdir())
             # Allow .git directory (re-init case) and the manifest file itself
             non_init_files = [
-                f for f in existing_files
-                if f.name != ".git" and f.resolve() != manifest_path
+                f for f in existing_files if f.name != ".git" and f.resolve() != manifest_path
             ]
             if non_init_files:
                 logger.error(f"Directory is not empty: {directory}")
@@ -161,7 +160,9 @@ def init_command(args: argparse.Namespace) -> int:
 
         # Print summary
         if should_print("info"):
-            print(f"Found {len(manifest.remotes)} remote(s) and {len(manifest.projects)} project(s)")
+            print(
+                f"Found {len(manifest.remotes)} remote(s) and {len(manifest.projects)} project(s)"
+            )
 
         # Validate manifest (already done in parse_manifest, but explicit check)
         if args.no_clone:
@@ -173,6 +174,9 @@ def init_command(args: argparse.Namespace) -> int:
         init_workspace(directory, manifest, manifest_source)
         if should_print("info"):
             print("Workspace initialized successfully")
+
+        # Create subtree manager for file operations
+        manager = SubtreeManager(directory, manifest)
 
         # Add subtrees
         for i, project in enumerate(manifest.projects, 1):
@@ -196,6 +200,34 @@ def init_command(args: argparse.Namespace) -> int:
                 if result.success:
                     if should_print("info"):
                         print(f"  {colorize('✓', 'green')} Component added: {project.path}")
+
+                    # Execute file operations after adding component
+                    from .file_operations import (
+                        execute_copyfile_operations,
+                        execute_linkfile_operations,
+                    )
+
+                    project_dir = directory / project.path
+                    if project.copyfiles:
+                        if should_print("info"):
+                            print(f"  Copying {len(project.copyfiles)} file(s)...")
+                        copyfile_results = execute_copyfile_operations(
+                            project=project,
+                            workspace_root=directory,
+                            project_dir=project_dir,
+                        )
+                        manager.file_operation_results.extend(copyfile_results)
+
+                    if project.linkfiles:
+                        if should_print("info"):
+                            print(f"  Creating {len(project.linkfiles)} symlink(s)...")
+                        linkfile_results = execute_linkfile_operations(
+                            project=project,
+                            workspace_root=directory,
+                            project_dir=project_dir,
+                        )
+                        manager.file_operation_results.extend(linkfile_results)
+
                 else:
                     logger.error(f"Failed to add component {project.path}: {result.stderr}")
                     return 2
@@ -203,6 +235,13 @@ def init_command(args: argparse.Namespace) -> int:
             except GitOperationError as e:
                 logger.error(f"Git operation failed for {project.path}: {e}")
                 return 2
+
+        # Display file operation summary if any
+        file_op_results = manager.get_file_operation_summary()
+        if file_op_results and should_print("info"):
+            summary = FileOperationSummary(results=file_op_results)
+            print()
+            print(summary.format_summary())
 
         if should_print("info"):
             print(f"\n{colorize('Success!', 'green')} Workspace initialized successfully")
@@ -227,6 +266,7 @@ def init_command(args: argparse.Namespace) -> int:
         logger.error(f"Unexpected error: {e}")
         if _verbose:
             import traceback
+
             traceback.print_exc()
         return 2
 
@@ -277,10 +317,12 @@ def sync_command(args: argparse.Namespace) -> int:
             components_to_sync = [component]
 
         # Sync components
-        len(components_to_sync)
+        total_components = len(components_to_sync)
 
         results = {}
-        for _i, project in enumerate(components_to_sync, 1):
+        for i, project in enumerate(components_to_sync, 1):
+            if should_print("info"):
+                print(f"Syncing component {i}/{total_components}: {project.path}")
 
             try:
                 result = manager._sync_component(project)
@@ -288,11 +330,24 @@ def sync_command(args: argparse.Namespace) -> int:
                 if result.success:
                     # Check if anything was updated
                     if "Already up to date" in result.stdout or "up-to-date" in result.stdout:
-                        pass
+                        if should_print("info"):
+                            print(f"  {colorize('✓', 'green')} Up to date")
                     else:
-                        pass
+                        if should_print("info"):
+                            print(f"  {colorize('✓', 'green')} Synced")
+
+                    # Display file operation progress if any
+                    if project.copyfiles:
+                        if should_print("info"):
+                            print(f"  Copying {len(project.copyfiles)} file(s)...")
+                    if project.linkfiles:
+                        if should_print("info"):
+                            print(f"  Creating {len(project.linkfiles)} symlink(s)...")
+
                     results[project.path] = "success"
                 else:
+                    if should_print("info"):
+                        print(f"  {colorize('✗', 'red')} Failed")
                     if not args.continue_on_error:
                         return 2
                     results[project.path] = "failed"
@@ -302,18 +357,31 @@ def sync_command(args: argparse.Namespace) -> int:
                     return 1
                 raise
             except GitOperationError:
+                if should_print("info"):
+                    print(f"  {colorize('✗', 'red')} Failed")
                 if not args.continue_on_error:
                     return 2
                 results[project.path] = "failed"
 
+        # Display file operation summary
+        file_op_results = manager.get_file_operation_summary()
+        if file_op_results and should_print("info"):
+            summary = FileOperationSummary(results=file_op_results)
+            print()
+            print(summary.format_summary())
+
         # Print summary
-        sum(1 for v in results.values() if v == "success")
+        success_count = sum(1 for v in results.values() if v == "success")
         failed_count = sum(1 for v in results.values() if v == "failed")
 
-        if failed_count == 0:
-            pass
-        else:
-            pass
+        if should_print("info"):
+            print()
+            if failed_count == 0:
+                print(f"{colorize('Success!', 'green')} All {success_count} component(s) synced")
+            else:
+                msg = f"{colorize('Partial success', 'yellow')}: "
+                msg += f"{success_count} synced, {failed_count} failed"
+                print(msg)
 
         return 0 if failed_count == 0 else 2
 
@@ -601,7 +669,8 @@ def status_command(args: argparse.Namespace) -> int:
         # Determine exit code based on component states
         from .models import SubtreeStatus
 
-        # Components that need attention (exclude UNINITIALIZED as it's expected in clean workspaces)
+        # Components that need attention
+        # (exclude UNINITIALIZED as it's expected in clean workspaces)
         needs_attention = any(
             s.status not in (SubtreeStatus.UP_TO_DATE, SubtreeStatus.UNINITIALIZED)
             for s in statuses

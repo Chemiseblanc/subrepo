@@ -142,3 +142,11 @@ class RepositoryNotFoundError(PushError):
             f"Create the repository before pushing."
         )
         self.repository = repository
+
+
+class FileOperationError(SubrepoError):
+    """Base exception for file operation errors (copyfile/linkfile)."""
+
+
+class PathSecurityError(FileOperationError):
+    """Raised when a file path fails security validation (e.g., directory traversal attempt)."""
