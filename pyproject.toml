@@ -119,3 +119,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["ANN", "T20"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "specs"]
+skips = ["B101"]  # Skip assert_used check as it's valid in tests
