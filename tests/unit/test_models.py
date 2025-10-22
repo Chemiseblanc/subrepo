@@ -4,7 +4,9 @@ import pytest
 
 from subrepo.exceptions import GitCommandError
 from subrepo.models import (
+    Copyfile,
     GitOperationResult,
+    Linkfile,
     Manifest,
     Project,
     Remote,
@@ -358,3 +360,293 @@ class TestGitOperationResult:
         assert error.command == ["git", "status"]
         assert error.exit_code == 1
         assert error.stderr == "fatal: error"
+
+
+class TestCopyfile:
+    """Tests for Copyfile dataclass."""
+
+    def test_copyfile_creation_with_valid_data(self):
+        """Test creating a Copyfile with valid data."""
+        copyfile = Copyfile(src="docs/README.md", dest="README.md")
+        assert copyfile.src == "docs/README.md"
+        assert copyfile.dest == "README.md"
+
+    def test_copyfile_validation_empty_src(self):
+        """Test Copyfile validation fails for empty src."""
+        with pytest.raises(ValueError, match="src and dest cannot be empty"):
+            Copyfile(src="", dest="README.md")
+
+    def test_copyfile_validation_empty_dest(self):
+        """Test Copyfile validation fails for empty dest."""
+        with pytest.raises(ValueError, match="src and dest cannot be empty"):
+            Copyfile(src="docs/README.md", dest="")
+
+    def test_copyfile_validation_dotdot_in_src(self):
+        """Test Copyfile validation fails for '..' in src path."""
+        with pytest.raises(ValueError, match="cannot contain '..'"):
+            Copyfile(src="../etc/passwd", dest="passwd")
+
+    def test_copyfile_validation_dotdot_in_dest(self):
+        """Test Copyfile validation fails for '..' in dest path."""
+        with pytest.raises(ValueError, match="cannot contain '..'"):
+            Copyfile(src="file.txt", dest="../outside/file.txt")
+
+    def test_copyfile_validation_absolute_src(self):
+        """Test Copyfile validation fails for absolute src path."""
+        with pytest.raises(ValueError, match="must be relative"):
+            Copyfile(src="/etc/passwd", dest="passwd")
+
+    def test_copyfile_validation_absolute_dest(self):
+        """Test Copyfile validation fails for absolute dest path."""
+        with pytest.raises(ValueError, match="must be relative"):
+            Copyfile(src="file.txt", dest="/root/file.txt")
+
+    def test_copyfile_is_frozen(self):
+        """Test that Copyfile is immutable."""
+        copyfile = Copyfile(src="file.txt", dest="dest.txt")
+        with pytest.raises(Exception):  # FrozenInstanceError  # noqa: B017, PT011
+            copyfile.src = "changed.txt"
+
+
+class TestLinkfile:
+    """Tests for Linkfile dataclass."""
+
+    def test_linkfile_creation_with_valid_data(self):
+        """Test creating a Linkfile with valid data."""
+        linkfile = Linkfile(src="scripts/build.sh", dest="build.sh")
+        assert linkfile.src == "scripts/build.sh"
+        assert linkfile.dest == "build.sh"
+
+    def test_linkfile_validation_empty_src(self):
+        """Test Linkfile validation fails for empty src."""
+        with pytest.raises(ValueError, match="src and dest cannot be empty"):
+            Linkfile(src="", dest="link.sh")
+
+    def test_linkfile_validation_empty_dest(self):
+        """Test Linkfile validation fails for empty dest."""
+        with pytest.raises(ValueError, match="src and dest cannot be empty"):
+            Linkfile(src="script.sh", dest="")
+
+    def test_linkfile_validation_dotdot_in_src(self):
+        """Test Linkfile validation fails for '..' in src path."""
+        with pytest.raises(ValueError, match="cannot contain '..'"):
+            Linkfile(src="../../../etc/passwd", dest="passwd")
+
+    def test_linkfile_validation_dotdot_in_dest(self):
+        """Test Linkfile validation fails for '..' in dest path."""
+        with pytest.raises(ValueError, match="cannot contain '..'"):
+            Linkfile(src="file.txt", dest="../../../root/file.txt")
+
+    def test_linkfile_validation_absolute_src(self):
+        """Test Linkfile validation fails for absolute src path."""
+        with pytest.raises(ValueError, match="must be relative"):
+            Linkfile(src="/usr/bin/python", dest="python")
+
+    def test_linkfile_validation_absolute_dest(self):
+        """Test Linkfile validation fails for absolute dest path."""
+        with pytest.raises(ValueError, match="must be relative"):
+            Linkfile(src="script.sh", dest="/usr/local/bin/script.sh")
+
+    def test_linkfile_is_frozen(self):
+        """Test that Linkfile is immutable."""
+        linkfile = Linkfile(src="file.txt", dest="link.txt")
+        with pytest.raises(Exception):  # FrozenInstanceError  # noqa: B017, PT011
+            linkfile.src = "changed.txt"
+
+
+class TestProjectWithCopyfiles:
+    """Tests for Project with copyfiles and linkfiles."""
+
+    def test_project_with_empty_copyfiles_and_linkfiles(self):
+        """Test Project with default empty copyfiles/linkfiles lists."""
+        project = Project(name="org/repo", path="lib/repo", remote="origin")
+        assert project.copyfiles == []
+        assert project.linkfiles == []
+
+    def test_project_with_copyfiles(self):
+        """Test Project with copyfiles list."""
+        copyfiles = [
+            Copyfile(src="docs/README.md", dest="README.md"),
+            Copyfile(src="config/Makefile", dest="Makefile"),
+        ]
+        project = Project(
+            name="org/repo",
+            path="lib/repo",
+            remote="origin",
+            copyfiles=copyfiles,
+        )
+        assert len(project.copyfiles) == 2
+        assert project.copyfiles[0].src == "docs/README.md"
+        assert project.copyfiles[1].dest == "Makefile"
+
+    def test_project_with_linkfiles(self):
+        """Test Project with linkfiles list."""
+        linkfiles = [
+            Linkfile(src="scripts/build.sh", dest="build.sh"),
+            Linkfile(src="docs", dest="documentation"),
+        ]
+        project = Project(
+            name="org/repo",
+            path="lib/repo",
+            remote="origin",
+            linkfiles=linkfiles,
+        )
+        assert len(project.linkfiles) == 2
+        assert project.linkfiles[0].src == "scripts/build.sh"
+        assert project.linkfiles[1].dest == "documentation"
+
+    def test_project_with_both_copyfiles_and_linkfiles(self):
+        """Test Project with both copyfiles and linkfiles."""
+        project = Project(
+            name="org/repo",
+            path="lib/repo",
+            remote="origin",
+            copyfiles=[Copyfile(src="README.md", dest="README.md")],
+            linkfiles=[Linkfile(src="docs", dest="documentation")],
+        )
+        assert len(project.copyfiles) == 1
+        assert len(project.linkfiles) == 1
+
+
+class TestManifestValidateDestPaths:
+    """Tests for Manifest.validate() with copyfile/linkfile dest path conflicts."""
+
+    def test_manifest_validate_no_duplicate_dests(self):
+        """Test Manifest.validate() succeeds when no duplicate dest paths."""
+        remotes = {"origin": Remote(name="origin", fetch="https://github.com/")}
+        projects = [
+            Project(
+                name="org/repo1",
+                path="lib/repo1",
+                remote="origin",
+                copyfiles=[Copyfile(src="file1.txt", dest="output1.txt")],
+            ),
+            Project(
+                name="org/repo2",
+                path="lib/repo2",
+                remote="origin",
+                copyfiles=[Copyfile(src="file2.txt", dest="output2.txt")],
+            ),
+        ]
+        manifest = Manifest(
+            remotes=remotes,
+            projects=projects,
+            default_remote="origin",
+        )
+        errors = manifest.validate()
+        assert errors == []
+
+    def test_manifest_validate_duplicate_copyfile_dest(self):
+        """Test Manifest.validate() detects duplicate copyfile dest paths."""
+        remotes = {"origin": Remote(name="origin", fetch="https://github.com/")}
+        projects = [
+            Project(
+                name="org/repo1",
+                path="lib/repo1",
+                remote="origin",
+                copyfiles=[Copyfile(src="file1.txt", dest="README.md")],
+            ),
+            Project(
+                name="org/repo2",
+                path="lib/repo2",
+                remote="origin",
+                copyfiles=[Copyfile(src="file2.txt", dest="README.md")],
+            ),
+        ]
+        manifest = Manifest(
+            remotes=remotes,
+            projects=projects,
+            default_remote="origin",
+        )
+        errors = manifest.validate()
+        assert len(errors) == 1
+        assert "Duplicate copyfile destination 'README.md'" in errors[0]
+        assert "org/repo1" in errors[0]
+        assert "org/repo2" in errors[0]
+
+    def test_manifest_validate_duplicate_linkfile_dest(self):
+        """Test Manifest.validate() detects duplicate linkfile dest paths."""
+        remotes = {"origin": Remote(name="origin", fetch="https://github.com/")}
+        projects = [
+            Project(
+                name="org/repo1",
+                path="lib/repo1",
+                remote="origin",
+                linkfiles=[Linkfile(src="docs1", dest="documentation")],
+            ),
+            Project(
+                name="org/repo2",
+                path="lib/repo2",
+                remote="origin",
+                linkfiles=[Linkfile(src="docs2", dest="documentation")],
+            ),
+        ]
+        manifest = Manifest(
+            remotes=remotes,
+            projects=projects,
+            default_remote="origin",
+        )
+        errors = manifest.validate()
+        assert len(errors) == 1
+        assert "Duplicate linkfile destination 'documentation'" in errors[0]
+        assert "org/repo1" in errors[0]
+        assert "org/repo2" in errors[0]
+
+    def test_manifest_validate_copyfile_linkfile_dest_conflict(self):
+        """Test Manifest.validate() detects conflict between copyfile and linkfile dest."""
+        remotes = {"origin": Remote(name="origin", fetch="https://github.com/")}
+        projects = [
+            Project(
+                name="org/repo1",
+                path="lib/repo1",
+                remote="origin",
+                copyfiles=[Copyfile(src="file.txt", dest="output.txt")],
+            ),
+            Project(
+                name="org/repo2",
+                path="lib/repo2",
+                remote="origin",
+                linkfiles=[Linkfile(src="link.txt", dest="output.txt")],
+            ),
+        ]
+        manifest = Manifest(
+            remotes=remotes,
+            projects=projects,
+            default_remote="origin",
+        )
+        errors = manifest.validate()
+        assert len(errors) == 1
+        assert "Duplicate linkfile destination 'output.txt'" in errors[0]
+
+    def test_manifest_validate_multiple_duplicates(self):
+        """Test Manifest.validate() detects multiple duplicate dest paths."""
+        remotes = {"origin": Remote(name="origin", fetch="https://github.com/")}
+        projects = [
+            Project(
+                name="org/repo1",
+                path="lib/repo1",
+                remote="origin",
+                copyfiles=[
+                    Copyfile(src="f1.txt", dest="README.md"),
+                    Copyfile(src="f2.txt", dest="LICENSE"),
+                ],
+            ),
+            Project(
+                name="org/repo2",
+                path="lib/repo2",
+                remote="origin",
+                copyfiles=[
+                    Copyfile(src="f3.txt", dest="README.md"),
+                    Copyfile(src="f4.txt", dest="LICENSE"),
+                ],
+            ),
+        ]
+        manifest = Manifest(
+            remotes=remotes,
+            projects=projects,
+            default_remote="origin",
+        )
+        errors = manifest.validate()
+        assert len(errors) == 2
+        assert any("README.md" in err for err in errors)
+        assert any("LICENSE" in err for err in errors)

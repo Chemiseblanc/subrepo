@@ -4,9 +4,53 @@ This module defines the core data structures used throughout the application.
 All models use dataclasses with full type hints for type safety.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+
+@dataclass(frozen=True)
+class Copyfile:
+    """File copy directive from project to workspace.
+
+    Attributes:
+        src: Source path relative to project directory
+        dest: Destination path relative to workspace root
+    """
+
+    src: str
+    dest: str
+
+    def __post_init__(self) -> None:
+        """Validate Copyfile attributes."""
+        if not self.src or not self.dest:
+            raise ValueError("Copyfile src and dest cannot be empty")
+        if ".." in self.src or ".." in self.dest:
+            raise ValueError(f"Path cannot contain '..': src={self.src}, dest={self.dest}")
+        if self.src.startswith("/") or self.dest.startswith("/"):
+            raise ValueError(f"Paths must be relative: src={self.src}, dest={self.dest}")
+
+
+@dataclass(frozen=True)
+class Linkfile:
+    """Symbolic link directive from workspace to project.
+
+    Attributes:
+        src: Source path relative to project directory (target of symlink)
+        dest: Destination path relative to workspace root (location of symlink)
+    """
+
+    src: str
+    dest: str
+
+    def __post_init__(self) -> None:
+        """Validate Linkfile attributes."""
+        if not self.src or not self.dest:
+            raise ValueError("Linkfile src and dest cannot be empty")
+        if ".." in self.src or ".." in self.dest:
+            raise ValueError(f"Path cannot contain '..': src={self.src}, dest={self.dest}")
+        if self.src.startswith("/") or self.dest.startswith("/"):
+            raise ValueError(f"Paths must be relative: src={self.src}, dest={self.dest}")
 
 
 @dataclass(frozen=True)
@@ -46,6 +90,8 @@ class Project:
         revision: Branch, tag, or commit hash to track
         upstream: Optional upstream branch for tracking
         clone_depth: Shallow clone depth (future optimization)
+        copyfiles: List of file copy directives for this project
+        linkfiles: List of symlink directives for this project
     """
 
     name: str
@@ -54,6 +100,8 @@ class Project:
     revision: str = "main"
     upstream: str | None = None
     clone_depth: int | None = None
+    copyfiles: list[Copyfile] = field(default_factory=list)
+    linkfiles: list[Linkfile] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Validate Project attributes."""
@@ -149,8 +197,27 @@ class Manifest:
         """
         errors: list[str] = []
 
-        # Already validated in __post_init__, but this allows
-        # non-raising validation for reporting
+        # Validate copyfile/linkfile dest path uniqueness across all projects
+        dest_paths: dict[str, str] = {}  # dest -> project name
+        for project in self.projects:
+            for copyfile in project.copyfiles:
+                if copyfile.dest in dest_paths:
+                    msg = f"Duplicate copyfile destination '{copyfile.dest}': "
+                    msg += f"conflicts between projects '{project.name}' "
+                    msg += f"and '{dest_paths[copyfile.dest]}'"
+                    errors.append(msg)
+                else:
+                    dest_paths[copyfile.dest] = project.name
+
+            for linkfile in project.linkfiles:
+                if linkfile.dest in dest_paths:
+                    msg = f"Duplicate linkfile destination '{linkfile.dest}': "
+                    msg += f"conflicts between projects '{project.name}' "
+                    msg += f"and '{dest_paths[linkfile.dest]}'"
+                    errors.append(msg)
+                else:
+                    dest_paths[linkfile.dest] = project.name
+
         return errors
 
 
@@ -447,5 +514,87 @@ class MultiPushSummary:
             for result in self.results:
                 if result.status == PushStatus.FAILED:
                     lines.append(f"  - {result.project_name}: {result.error_message}")
+
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class FileOperationResult:
+    """Result of a copyfile or linkfile operation.
+
+    Attributes:
+        project_name: Name of the project
+        operation_type: "copyfile" or "linkfile"
+        src: Source path
+        dest: Destination path
+        success: Whether operation succeeded
+        error_message: Error message if failed
+        fallback_used: Whether linkfile fell back to copy
+    """
+
+    project_name: str
+    operation_type: str
+    src: str
+    dest: str
+    success: bool
+    error_message: str | None = None
+    fallback_used: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate FileOperationResult attributes."""
+        if self.operation_type not in ("copyfile", "linkfile"):
+            raise ValueError(f"Invalid operation_type: {self.operation_type}")
+        if not self.success and not self.error_message:
+            raise ValueError("Failed operation must include error_message")
+        if self.success and self.error_message:
+            raise ValueError("Successful operation should not have error_message")
+
+
+@dataclass(frozen=True)
+class FileOperationSummary:
+    """Summary of file operations during sync.
+
+    Attributes:
+        results: List of operation results
+    """
+
+    results: list[FileOperationResult]
+
+    @property
+    def total_count(self) -> int:
+        """Total number of operations attempted."""
+        return len(self.results)
+
+    @property
+    def success_count(self) -> int:
+        """Number of successful operations."""
+        return sum(1 for r in self.results if r.success)
+
+    @property
+    def failed_count(self) -> int:
+        """Number of failed operations."""
+        return sum(1 for r in self.results if not r.success)
+
+    @property
+    def fallback_count(self) -> int:
+        """Number of linkfile operations that fell back to copy."""
+        return sum(1 for r in self.results if r.fallback_used)
+
+    def format_summary(self) -> str:
+        """Format a human-readable summary."""
+        lines = [f"File Operations: {self.success_count}/{self.total_count} succeeded"]
+
+        if self.fallback_count > 0:
+            lines.append(f"  Symlink fallbacks: {self.fallback_count} (copied instead)")
+
+        if self.failed_count > 0:
+            lines.append(f"  Failed: {self.failed_count}")
+            lines.append("\nFailures:")
+            for result in self.results:
+                if not result.success:
+                    lines.append(
+                        f"  - {result.project_name} ({result.operation_type}): "
+                        f"{result.src} → {result.dest}: {result.error_message}"
+                    )
 
         return "\n".join(lines)

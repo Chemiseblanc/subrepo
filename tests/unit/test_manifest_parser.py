@@ -546,10 +546,183 @@ class TestManifestValidationRules:
         assert extract_default_branch_from_project(project) == "v1.0.0"
 
         # SHA - should return None
-        project = Project(
-            name="test",
-            path="test",
-            remote="origin",
-            revision="a" * 40
-        )
+        project = Project(name="test", path="test", remote="origin", revision="a" * 40)
         assert extract_default_branch_from_project(project) is None
+
+
+class TestCopyfileAndLinkfileParsing:
+    """Tests for parsing copyfile and linkfile elements from XML."""
+
+    def test_parse_project_extracts_copyfile_elements(self):
+        """Test that parse_project extracts copyfile elements from XML."""
+        from subrepo.manifest_parser import parse_manifest
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://github.com/" />
+  <default remote="origin" revision="main" />
+  <project name="org/repo" path="lib/repo">
+    <copyfile src="docs/README.md" dest="README.md" />
+  </project>
+</manifest>
+"""
+            )
+            manifest_path = Path(f.name)
+
+        try:
+            manifest = parse_manifest(manifest_path)
+
+            assert len(manifest.projects) == 1
+            project = manifest.projects[0]
+            assert len(project.copyfiles) == 1
+            assert project.copyfiles[0].src == "docs/README.md"
+            assert project.copyfiles[0].dest == "README.md"
+        finally:
+            manifest_path.unlink()
+
+    def test_parse_project_creates_copyfile_objects_with_correct_src_dest(self):
+        """Test that parse_project creates Copyfile objects with correct attributes."""
+        from subrepo.manifest_parser import parse_manifest
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://github.com/" />
+  <default remote="origin" revision="main" />
+  <project name="org/repo" path="lib/repo">
+    <copyfile src="config/Makefile" dest="build/Makefile" />
+  </project>
+</manifest>
+"""
+            )
+            manifest_path = Path(f.name)
+
+        try:
+            manifest = parse_manifest(manifest_path)
+
+            copyfile = manifest.projects[0].copyfiles[0]
+            assert copyfile.src == "config/Makefile"
+            assert copyfile.dest == "build/Makefile"
+        finally:
+            manifest_path.unlink()
+
+    def test_parse_project_handles_multiple_copyfile_elements(self):
+        """Test that parse_project handles multiple copyfile elements per project."""
+        from subrepo.manifest_parser import parse_manifest
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://github.com/" />
+  <default remote="origin" revision="main" />
+  <project name="org/repo" path="lib/repo">
+    <copyfile src="docs/README.md" dest="README.md" />
+    <copyfile src="docs/LICENSE" dest="LICENSE" />
+    <copyfile src="config/Makefile" dest="Makefile" />
+  </project>
+</manifest>
+"""
+            )
+            manifest_path = Path(f.name)
+
+        try:
+            manifest = parse_manifest(manifest_path)
+
+            project = manifest.projects[0]
+            assert len(project.copyfiles) == 3
+            assert project.copyfiles[0].src == "docs/README.md"
+            assert project.copyfiles[1].src == "docs/LICENSE"
+            assert project.copyfiles[2].src == "config/Makefile"
+        finally:
+            manifest_path.unlink()
+
+    def test_parse_project_extracts_linkfile_elements(self):
+        """Test that parse_project extracts linkfile elements from XML. (T036)"""
+        from subrepo.manifest_parser import parse_manifest
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://github.com/" />
+  <default remote="origin" revision="main" />
+  <project name="org/repo" path="lib/repo">
+    <linkfile src="scripts/build.sh" dest="build.sh" />
+  </project>
+</manifest>
+"""
+            )
+            manifest_path = Path(f.name)
+
+        try:
+            manifest = parse_manifest(manifest_path)
+
+            assert len(manifest.projects) == 1
+            project = manifest.projects[0]
+            assert len(project.linkfiles) == 1
+            assert project.linkfiles[0].src == "scripts/build.sh"
+            assert project.linkfiles[0].dest == "build.sh"
+        finally:
+            manifest_path.unlink()
+
+    def test_parse_project_creates_linkfile_objects_with_correct_src_dest(self):
+        """Test that parse_project creates Linkfile objects with correct attributes. (T037)"""
+        from subrepo.manifest_parser import parse_manifest
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://github.com/" />
+  <default remote="origin" revision="main" />
+  <project name="org/repo" path="lib/repo">
+    <linkfile src="docs" dest="documentation" />
+  </project>
+</manifest>
+"""
+            )
+            manifest_path = Path(f.name)
+
+        try:
+            manifest = parse_manifest(manifest_path)
+
+            linkfile = manifest.projects[0].linkfiles[0]
+            assert linkfile.src == "docs"
+            assert linkfile.dest == "documentation"
+        finally:
+            manifest_path.unlink()
+
+    def test_parse_project_handles_multiple_linkfile_elements(self):
+        """Test that parse_project handles multiple linkfile elements per project. (T038)"""
+        from subrepo.manifest_parser import parse_manifest
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".xml", delete=False) as f:
+            f.write(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://github.com/" />
+  <default remote="origin" revision="main" />
+  <project name="org/repo" path="lib/repo">
+    <linkfile src="scripts/build.sh" dest="build.sh" />
+    <linkfile src="scripts/test.sh" dest="test.sh" />
+    <linkfile src="docs" dest="documentation" />
+  </project>
+</manifest>
+"""
+            )
+            manifest_path = Path(f.name)
+
+        try:
+            manifest = parse_manifest(manifest_path)
+
+            project = manifest.projects[0]
+            assert len(project.linkfiles) == 3
+            assert project.linkfiles[0].src == "scripts/build.sh"
+            assert project.linkfiles[1].src == "scripts/test.sh"
+            assert project.linkfiles[2].src == "docs"
+        finally:
+            manifest_path.unlink()

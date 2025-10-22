@@ -203,7 +203,8 @@ class TestSelectiveComponentPull:
         """
         # The pull command is implemented and tested via CLI
         from subrepo.subtree_manager import SubtreeManager
-        assert hasattr(SubtreeManager, 'pull_component')
+
+        assert hasattr(SubtreeManager, "pull_component")
 
     def test_pull_component_by_name(self):
         """Test pulling component by name.
@@ -211,7 +212,8 @@ class TestSelectiveComponentPull:
         Note: Tested via CLI contract tests in test_cli_pull.py.
         """
         from subrepo.models import Manifest
-        assert hasattr(Manifest, 'get_project_by_name')
+
+        assert hasattr(Manifest, "get_project_by_name")
 
     def test_pull_component_by_path(self):
         """Test pulling component by path.
@@ -219,7 +221,8 @@ class TestSelectiveComponentPull:
         Note: Tested via CLI contract tests in test_cli_pull.py.
         """
         from subrepo.models import Manifest
-        assert hasattr(Manifest, 'get_project_by_path')
+
+        assert hasattr(Manifest, "get_project_by_path")
 
     def test_pull_component_not_found(self):
         """Test error handling when component doesn't exist.
@@ -228,4 +231,5 @@ class TestSelectiveComponentPull:
         """
         # Error handling is in CLI layer
         from subrepo.cli import pull_command
+
         assert pull_command is not None

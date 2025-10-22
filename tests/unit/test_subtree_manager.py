@@ -15,20 +15,23 @@ class TestSubtreeSyncLogic:
     def test_sync_all_components(self):
         """Test sync_all_components function."""
         from subrepo.subtree_manager import SubtreeManager
+
         # sync_all_components method exists
-        assert hasattr(SubtreeManager, 'sync_all_components')
+        assert hasattr(SubtreeManager, "sync_all_components")
 
     def test_detect_component_state(self):
         """Test component state detection."""
         from subrepo.subtree_manager import SubtreeManager
+
         # detect_component_state method exists
-        assert hasattr(SubtreeManager, 'detect_component_state')
+        assert hasattr(SubtreeManager, "detect_component_state")
 
     def test_detect_conflicts(self):
         """Test conflict detection."""
         from subrepo.subtree_manager import SubtreeManager
+
         # detect_conflicts method exists
-        assert hasattr(SubtreeManager, 'detect_conflicts')
+        assert hasattr(SubtreeManager, "detect_conflicts")
 
 
 class TestCommitExtractionLogic:
@@ -37,8 +40,9 @@ class TestCommitExtractionLogic:
     def test_extract_subtree_commits(self):
         """Test extracting commits for a subtree."""
         from subrepo.subtree_manager import SubtreeManager
+
         # extract_subtree_commits method exists
-        assert hasattr(SubtreeManager, 'extract_subtree_commits')
+        assert hasattr(SubtreeManager, "extract_subtree_commits")
 
 
 class TestSingleComponentPullLogic:
@@ -47,8 +51,9 @@ class TestSingleComponentPullLogic:
     def test_pull_single_component(self):
         """Test pulling updates for a single component."""
         from subrepo.subtree_manager import SubtreeManager
+
         # pull_component method exists
-        assert hasattr(SubtreeManager, 'pull_component')
+        assert hasattr(SubtreeManager, "pull_component")
 
 
 class TestStatusComputationLogic:

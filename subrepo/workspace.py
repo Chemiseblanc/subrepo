@@ -46,8 +46,7 @@ def init_workspace(
     if existing_files:
         # Filter out allowed files
         non_init_files = [
-            f for f in existing_files
-            if f.name != ".git" and f.resolve() != manifest_path_resolved
+            f for f in existing_files if f.name != ".git" and f.resolve() != manifest_path_resolved
         ]
         if non_init_files:
             raise WorkspaceError(
