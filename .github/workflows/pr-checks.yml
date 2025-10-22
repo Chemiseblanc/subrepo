@@ -101,10 +101,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov
-          pip install -e .
       
       - name: Run tests with coverage
-        run: pytest --cov=subrepo --cov-report=xml --cov-report=term-missing
+        run: pytest
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -114,29 +113,3 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
-
-  test-all-types:
-    name: Run All Test Types
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pytest pytest-cov
-          pip install -e .
-      
-      - name: Run unit tests
-        run: pytest tests/unit -v
-      
-      - name: Run integration tests
-        run: pytest tests/integration -v
-      
-      - name: Run contract tests
-        run: pytest tests/contract -v
